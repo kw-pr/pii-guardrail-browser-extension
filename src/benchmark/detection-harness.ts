@@ -2,8 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseBenchmarkCorpusJsonl, type BenchmarkCorpus, type BenchmarkExample } from './contracts';
 import { DEFAULT_NER_MODEL, DEFAULT_SETTINGS, NER_MODELS, nerModelDefinitionFor } from '../shared/constants';
-import type { DetectionOptions, NerModelKey, PiiSpan } from '../shared/message-types';
-import { getNerStatus } from '../offscreen/detection';
+import type { DetectionOptions, NerModelKey, NerStatus, PiiSpan } from '../shared/message-types';
 import { createBenchmarkReport, formatBenchmarkReport } from './reporting';
 
 export interface BenchmarkCliOptions {
@@ -32,7 +31,7 @@ export interface BenchmarkDetectionRunResult {
   sourceExamples: BenchmarkExample[];
   mode: 'regex-only' | 'model';
   config: DetectionOptions;
-  provider: ReturnType<typeof getNerStatus>;
+  provider: NerStatus;
   timings: {
     totalWallMs: number;
   };
@@ -50,7 +49,7 @@ export interface RunBenchmarkDetectionOptions {
   outputPath?: string;
   rootDir?: string;
   detector?: BenchmarkDetector;
-  getProviderStatus?: (config: DetectionOptions) => ReturnType<typeof getNerStatus>;
+  getProviderStatus?: (config: DetectionOptions) => NerStatus;
   now?: () => number;
 }
 
@@ -172,7 +171,7 @@ export async function runBenchmarkDetection(
   const corpus = parseBenchmarkCorpusJsonl(fs.readFileSync(options.corpusPath, 'utf8'));
   const config = createBenchmarkDetectionConfig({ model, regexOnly });
   const detector = options.detector ?? defaultDetector;
-  const readProviderStatus = options.getProviderStatus ?? getNerStatus;
+  const readProviderStatus = options.getProviderStatus ?? defaultProviderStatus;
   const now = options.now ?? defaultNow;
   const examples: BenchmarkExampleDetectionResult[] = [];
   const runStartedAt = now();
@@ -250,6 +249,25 @@ async function defaultDetector(
 ): Promise<{ spans: PiiSpan[]; nerMs?: number }> {
   const { detectWithExternalNer } = await import('../offscreen/detection');
   return detectWithExternalNer(text, config);
+}
+
+function defaultProviderStatus(config: DetectionOptions): NerStatus {
+  if (config.ner_provider === 'off') {
+    const definition = nerModelDefinitionFor(config.ner_model ?? DEFAULT_NER_MODEL);
+    return {
+      mode: 'off',
+      state: 'unavailable',
+      model: definition.key,
+      modelLabel: definition.label,
+      message: 'NER provider is turned off.',
+    };
+  }
+
+  const requireFn = eval('require') as NodeRequire;
+  const { getNerStatus } = requireFn('../offscreen/detection') as {
+    getNerStatus: (config?: DetectionOptions) => NerStatus;
+  };
+  return getNerStatus(config);
 }
 
 function summarizeCorpus(corpus: BenchmarkCorpus): BenchmarkDetectionRunResult['corpus'] {

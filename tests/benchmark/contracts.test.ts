@@ -6,9 +6,6 @@ import {
 } from '../../src/benchmark/contracts';
 import { stringIndexToByteOffset } from '../../src/shared/text-offsets';
 
-const { readFileSync } = require('fs');
-const { join } = require('path');
-
 function metadata(overrides: Partial<BenchmarkCorpusMetadata> = {}): BenchmarkCorpusMetadata {
   return {
     recordType: 'metadata',
@@ -75,10 +72,64 @@ function jsonl(...records: object[]): string {
   return `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
 }
 
+function generatedOpenPiiFixture(): string {
+  const records: object[] = [
+    metadata({
+      corpusId: 'openpii-generated-v1',
+      description: 'Generated OpenPII fixture corpus',
+      source: {
+        name: 'OpenPII',
+        url: 'https://huggingface.co/datasets/ai4privacy/open-pii-masking-300k',
+        datasetId: 'ai4privacy/open-pii-masking-300k',
+      },
+      curation: {
+        strategy: 'fixture',
+        byLanguage: { en: 250, de: 250 },
+        byLengthBucket: { short: 500 },
+        byEntityType: { PERSON: 500 },
+        negativeExamples: 0,
+        miscExamples: 0,
+      },
+    }),
+  ];
+
+  for (let index = 0; index < 500; index += 1) {
+    const language = index % 2 === 0 ? 'en' : 'de';
+    const name = language === 'en' ? 'Ada Lovelace' : 'Björn Müller';
+    const text =
+      language === 'en'
+        ? `Contact ${name} about ticket ${index}.`
+        : `Bitte ${name} zu Ticket ${index} kontaktieren.`;
+    const start = stringIndexToByteOffset(text, text.indexOf(name));
+    records.push(
+      example({
+        id: `openpii-${language}-${index}`,
+        language,
+        text,
+        goldSpans: [
+          {
+            start,
+            end: start + stringIndexToByteOffset(name, name.length),
+            entity_type: 'PERSON',
+            text: name,
+          },
+        ],
+        source: {
+          dataset: 'ai4privacy/open-pii-masking-300k',
+          recordId: String(index),
+          split: 'validation',
+          sourceRow: index,
+        },
+      })
+    );
+  }
+
+  return jsonl(...records);
+}
+
 describe('benchmark corpus contracts', () => {
-  test('parses the committed OpenPII corpus metadata and 500 examples', () => {
-    const corpusPath = join(process.cwd(), 'benchmarks/corpora/openpii-generated.jsonl');
-    const corpus = parseBenchmarkCorpusJsonl(readFileSync(corpusPath, 'utf8'));
+  test('parses OpenPII corpus metadata and 500 examples', () => {
+    const corpus = parseBenchmarkCorpusJsonl(generatedOpenPiiFixture());
 
     expect(corpus.metadata.corpusId).toBe('openpii-generated-v1');
     expect(corpus.metadata.spanOffsetUnit).toBe('utf8-bytes');

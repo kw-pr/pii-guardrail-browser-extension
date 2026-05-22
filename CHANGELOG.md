@@ -4,6 +4,10 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [0.2.2] - Public Beta
+
+- Shortened extension description to fit the Chrome Web Store 132-character limit
+
 ## [0.2.1] - Public Beta
 
 - Reframed extension description and popup messaging
